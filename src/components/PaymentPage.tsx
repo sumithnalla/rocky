@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { venuesData } from '../data/artistsData';
-import { supabase } from '../lib/supabase';
+import { supabase, type Slot } from '../lib/supabase';
 import { Building, Info } from 'lucide-react';
 
-interface Slot {
-  id: string;
-  start_time: string;
-  end_time: string;
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
 }
 
 const PaymentPage = () => {
@@ -38,21 +38,23 @@ const PaymentPage = () => {
         setError(null);
 
         const { data, error: slotError } = await supabase
-          .from('slots')
-          .select('id, start_time, end_time')
-          .eq('venue_id', venue.id)
-          .eq('date', selectedDate)
-          .not('id', 'in', (
-            supabase
-              .from('bookings')
-              .select('slot_id')
-              .eq('venue_id', venue.id)
-              .eq('booking_date', selectedDate)
-          ));
+          .rpc('get_available_slots', {
+            p_venue_id: venue.id,
+            p_date: selectedDate
+          });
 
         if (slotError) throw slotError;
 
         setSlots(data || []);
+        
+        // Reset slot selection if current selection is no longer available
+        if (data && data.length > 0) {
+          if (!data.find(slot => slot.id === formData.slotId)) {
+            setFormData(prev => ({ ...prev, slotId: '' }));
+          }
+        } else {
+          setFormData(prev => ({ ...prev, slotId: '' }));
+        }
       } catch (err: any) {
         console.error('Error fetching slots:', err);
         setError(err.message);
@@ -82,6 +84,7 @@ const PaymentPage = () => {
           whatsapp: formData.whatsapp,
           email: formData.email,
           decoration: formData.decoration,
+          advance_paid: false
         })
         .select()
         .single();
@@ -102,7 +105,7 @@ const PaymentPage = () => {
             .from('bookings')
             .update({
               payment_id: response.razorpay_payment_id,
-              advance_paid: true,
+              advance_paid: true
             })
             .eq('id', booking.id);
 
